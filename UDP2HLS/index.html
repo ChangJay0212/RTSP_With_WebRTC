@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UDP to HLS</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.3.0"></script>
+</head>
+<body>
+    <h1>UDP Stream via HLS</h1>
+    <video id="video" controls autoplay muted></video>
+    <p id="error-message" style="color: red; display: none;">Failed to load the stream. Please try again later.</p>
+    <script>
+        var video = document.getElementById('video');
+        var errorMessage = document.getElementById('error-message');
+
+        if (Hls.isSupported()) {
+            var hls = new Hls();
+            hls.loadSource('http://localhost:8003/hls/playlist.m3u8');
+            hls.attachMedia(video);
+
+            // Error handling
+            hls.on(Hls.Events.ERROR, function (event, data) {
+                if (data.fatal) {
+                    console.error('HLS.js error:', data);
+                    errorMessage.style.display = 'block';
+                    hls.destroy();
+                }
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = 'http://localhost:8003/hls/playlist.m3u8';
+        } else {
+            errorMessage.style.display = 'block';
+            console.error('This browser does not support HLS.');
+        }
+    </script>
+</body>
+</html>

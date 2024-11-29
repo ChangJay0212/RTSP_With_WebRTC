@@ -1,0 +1,72 @@
+version: '3.8'
+
+networks:
+  default:
+    name: inner-network
+    driver: bridge
+
+services:
+  # RTSP 源服務
+  src-server:
+    build:
+      context: .
+      dockerfile: gstreamer.Dockerfile
+    container_name: rtp-src-send
+    networks:
+      - default
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+    command: >
+      bash -c "gst-launch-1.0 v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! udpsink host=webrtc-container port=5000"
+    restart: always
+
+  # WebRTC 服務
+  webrtc-container:
+    build:
+      context: .
+      dockerfile: webrtc.Dockerfile
+    container_name: webrtc-server
+    networks:
+      - default
+    environment:
+      - GST_DEBUG=3
+    ports:
+      - "8554:8554" # 如果需要 GStreamer 的 RTSP 支援
+    volumes:
+      - ./webrtc_server.py:/app/webrtc_server.py
+    command: >
+      bash -c "python3 /app/webrtc_server.py"
+    restart: always
+    depends_on:
+      - src-server
+      - signaling-container
+
+  # Signaling Server
+  signaling-container:
+    build:
+      context: .
+      dockerfile: signaling.Dockerfile
+    container_name: signaling-server
+    networks:
+      - default
+    volumes:
+      - ./signaling_server.py:/app/signaling_server.py
+    command: >
+      bash -c "pip install websockets && python3 signaling_server.py"
+    ports:
+      - "8080:8080"
+    restart: always
+
+  # Nginx Web Server
+  nginx-container:
+    image: nginx:latest
+    container_name: nginx-server
+    networks:
+      - default
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: always

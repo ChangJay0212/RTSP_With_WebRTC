@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  src-server:
+    build:
+      context: .
+      dockerfile: rtsp.Dockerfile
+    container_name: src-server
+    ports:
+      - "8554:8554"  
+    devices:
+      - /dev/video0:/dev/video0 
+      - /dev/video1:/dev/video1
+    volumes:
+      - ./stream_rtsp.py:/app/stream_rtsp.py
+    restart: always
+
+  gstreamer-container:
+    build:
+      context: .
+      dockerfile: gstreamer.Dockerfile
+    container_name: gstreamer-container
+    volumes:
+      - ./hls:/hls
+    depends_on:
+      - src-server
+    command: >
+      bash -c "./wait-for-rtsp.sh rtsp://src-server:8554/
+      gst-launch-1.0 -v
+      rtspsrc location=rtsp://src-server:8554/ latency=100 !
+      rtph264depay ! h264parse ! mpegtsmux !
+      hlssink location=/hls/segment%05d.ts playlist-location=/hls/playlist.m3u8 target-duration=2 max-files=10"
+    restart: always
+
+  nginx-container:
+    build:
+      context: .
+      dockerfile: nginx.Dockerfile
+    container_name: nginx-container
+    ports:
+      - "8003:80"  
+    volumes:
+      - ./hls:/usr/share/nginx/html/hls  
+    depends_on:
+      - gstreamer-container
+    restart: always

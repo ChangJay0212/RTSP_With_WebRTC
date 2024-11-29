@@ -1,0 +1,54 @@
+version: '3.8'
+
+networks:
+  default:
+    name: inner-network
+    driver: bridge
+
+services:
+  src-server:
+    build:
+      context: .
+      dockerfile: gstreamer.Dockerfile
+    container_name: rtsp-src-send
+    networks:
+      - default
+    devices:
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+    command: >
+      bash -c "gst-launch-1.0 v4l2src device=/dev/video0 ! videoconvert ! video/x-raw,format=I420 ! x264enc speed-preset=ultrafast tune=zerolatency ! rtph264pay config-interval=1 pt=96 ! udpsink host=gstreamer-container port=5000"
+    restart: always
+
+  gstreamer-container:
+    build:
+      context: .
+      dockerfile: gstreamer.Dockerfile
+    container_name: rtsp-src-receive
+    volumes:
+      - ./hls:/hls
+    networks:
+      - default
+    command: >
+      bash -c "gst-launch-1.0 udpsrc port=5000 caps=\"application/x-rtp,media=video,encoding-name=H264,payload=96\" !
+      rtph264depay ! h264parse ! mpegtsmux !
+      hlssink location=/hls/segment%05d.ts playlist-location=/hls/playlist.m3u8 target-duration=2 max-files=10"
+    restart: always
+
+  nginx-container:
+    build:
+      context: .
+      dockerfile: nginx.Dockerfile
+    container_name: nginx-container
+    ports:
+      - "8003:80"  
+    networks:
+      - default
+    volumes:
+      - ./hls:/usr/share/nginx/html/hls  
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - gstreamer-container
+    restart: always
+
+    
